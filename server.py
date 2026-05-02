@@ -40,6 +40,82 @@ RAZORPAY_KEY_ID     = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_API_BASE   = "https://api.razorpay.com/v1"
 
+# Authoritative product catalog. Frontend prices are display-only; the server
+# alone decides what an order costs. Mirror this with main.js's PRODUCTS map.
+# `in_stock=False` blocks the product from being ordered even if the client tries.
+PRODUCT_CATALOG = {
+    "plain-joggers":     {"name": "Signature Wide-Leg Joggers", "price": 699,  "in_stock": True},
+    "printed-joggers":   {"name": "Gothic Cathedral Joggers",   "price": 999,  "in_stock": False},
+    "thorn-tee":         {"name": "Thorn Tee",                  "price": 599,  "in_stock": False},
+    "thorn-combo":       {"name": "Thorn Drop Bundle",          "price": 1399, "in_stock": False},
+}
+ALLOWED_SIZES = {"XS", "S", "M", "L", "XL", "XXL"}
+MAX_QTY_PER_ITEM = 10
+
+# Coupons. `discount_pct` = % off subtotal. `flat_off` = fixed ₹ off.
+# `min_subtotal` = subtotal must be at least this much (in rupees) to apply.
+COUPONS = {
+    "STITCH10":  {"discount_pct": 10, "flat_off": 0,   "min_subtotal": 0,    "label": "10% OFF"},
+    "DROP200":   {"discount_pct": 0,  "flat_off": 200, "min_subtotal": 1000, "label": "₹200 OFF on orders over ₹1000"},
+    "WELCOME15": {"discount_pct": 15, "flat_off": 0,   "min_subtotal": 0,    "label": "15% off — first order"},
+}
+
+
+def apply_coupon(subtotal_rupees, code):
+    """Return (final_total_rupees, discount_rupees, label).
+
+    Raises ValueError if the code is invalid or doesn't meet conditions.
+    """
+    if not code:
+        return subtotal_rupees, 0, None
+    coupon = COUPONS.get(code.strip().upper())
+    if not coupon:
+        raise ValueError("Invalid coupon code")
+    if subtotal_rupees < coupon["min_subtotal"]:
+        raise ValueError(f"Coupon needs a minimum subtotal of ₹{coupon['min_subtotal']}")
+
+    discount = (subtotal_rupees * coupon["discount_pct"] // 100) + coupon["flat_off"]
+    final = max(1, subtotal_rupees - discount)  # never let total fall to 0
+    return final, discount, coupon["label"]
+
+
+def compute_cart_subtotal_rupees(items):
+    """Validate cart items and return the trusted subtotal in rupees.
+
+    Raises ValueError on any malformed input or out-of-stock product —
+    caller maps that to HTTP 400.
+    """
+    if not isinstance(items, list) or not items:
+        raise ValueError("Cart is empty")
+
+    total_rupees = 0
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError("Invalid cart item")
+        pid  = raw.get("id")
+        size = raw.get("size")
+        qty  = raw.get("qty", 1)
+
+        product = PRODUCT_CATALOG.get(pid)
+        if not product:
+            raise ValueError(f"Unknown product: {pid!r}")
+        if not product.get("in_stock", False):
+            raise ValueError(f"{product['name']} is out of stock")
+        if size not in ALLOWED_SIZES:
+            raise ValueError(f"Invalid size: {size!r}")
+        if not isinstance(qty, int) or qty < 1 or qty > MAX_QTY_PER_ITEM:
+            raise ValueError(f"Invalid quantity for {pid!r}")
+
+        total_rupees += product["price"] * qty
+
+    return total_rupees
+
+
+# Pending orders keyed by Razorpay order_id, populated when we create the order
+# and consumed when the signature is verified. Holds the SERVER-computed
+# amount and the SERVER-validated cart so verify can't be tricked.
+pending_orders = {}
+
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css":  "text/css; charset=utf-8",
@@ -71,7 +147,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # ── GET ──────────────────────────────────────────────────────────
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        path   = parsed.path.rstrip("/") or "/"
+        # Decode percent-encoded characters (e.g. %20 → space) so filenames
+        # with spaces or unicode actually match what's on disk.
+        path   = urllib.parse.unquote(parsed.path).rstrip("/") or "/"
 
         # ── API routes ───────────────────────────────────────────────
         if path == "/api/status":
@@ -168,7 +246,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_verify_payment(body)
             return
 
+        if path == "/api/coupon/preview":
+            self._handle_coupon_preview(body)
+            return
+
         self._send_json({"error": "Route not found"}, status=404)
+
+    # ── COUPON PREVIEW ───────────────────────────────────────────────
+    def _handle_coupon_preview(self, body):
+        """Validate cart + coupon and return the discount, without creating
+        a Razorpay order. Used by the checkout UI to show 'You saved ₹X'
+        before the user clicks Pay."""
+        try:
+            data = json.loads(body or b"{}")
+        except Exception:
+            self._send_json({"success": False, "error": "Invalid JSON"}, status=400)
+            return
+
+        items = data.get("items")
+        code  = data.get("coupon")
+
+        try:
+            subtotal = compute_cart_subtotal_rupees(items)
+            final_total, discount, label = apply_coupon(subtotal, code)
+        except ValueError as e:
+            self._send_json({"success": False, "error": str(e)}, status=400)
+            return
+
+        self._send_json({
+            "success":      True,
+            "subtotal":     subtotal,
+            "discount":     discount,
+            "total":        final_total,
+            "coupon_label": label,
+        })
 
     # ── RAZORPAY HANDLERS ────────────────────────────────────────────
     def _handle_create_order(self, body):
@@ -182,16 +293,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"success": False, "error": "Invalid JSON"}, status=400)
             return
 
-        amount = data.get("amount")
-        currency = data.get("currency", "INR")
-        receipt = data.get("receipt") or f"rcpt_{int(datetime.now().timestamp())}"
+        # Trust the server, not the client. Frontend sends only what the user
+        # *wants* to buy; we look up actual prices in the catalog.
+        items  = data.get("items")
+        coupon = data.get("coupon")  # optional
+        try:
+            subtotal = compute_cart_subtotal_rupees(items)
+            final_total, discount, coupon_label = apply_coupon(subtotal, coupon)
+        except ValueError as e:
+            self._send_json({"success": False, "error": str(e)}, status=400)
+            return
 
-        if not isinstance(amount, int) or amount < 100:
+        amount = final_total * 100  # paise
+        if amount < 100:
             self._send_json(
-                {"success": False, "error": "Amount must be an integer >= 100 paise"},
+                {"success": False, "error": "Order total must be at least ₹1"},
                 status=400,
             )
             return
+
+        currency = "INR"
+        receipt = f"rcpt_{int(datetime.now().timestamp())}"
 
         payload = json.dumps({
             "amount":   amount,
@@ -230,14 +352,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"success": False, "error": "Network error"}, status=500)
             return
 
-        print(f"\n  [+] Razorpay order created: {rp.get('id')} ({amount} paise)\n")
+        rzp_order_id = rp.get("id")
+        # Stash the server-trusted amount + items so /verify can finalize
+        # without re-trusting whatever the client sends back.
+        pending_orders[rzp_order_id] = {
+            "amount":       amount,
+            "subtotal":     subtotal,
+            "discount":     discount,
+            "coupon":       coupon.strip().upper() if coupon else None,
+            "coupon_label": coupon_label,
+            "items":        items,
+            "created_at":   datetime.now().isoformat(),
+        }
+
+        print(f"\n  [+] Razorpay order created: {rzp_order_id} ({amount} paise, "
+              f"discount ₹{discount}{', coupon ' + coupon_label if coupon_label else ''})\n")
         self._send_json({
-            "success":  True,
-            "order_id": rp.get("id"),
-            "amount":   rp.get("amount"),
-            "currency": rp.get("currency"),
-            "receipt":  rp.get("receipt"),
-            "key_id":   RAZORPAY_KEY_ID,
+            "success":      True,
+            "order_id":     rzp_order_id,
+            "amount":       rp.get("amount"),
+            "currency":     rp.get("currency"),
+            "receipt":      rp.get("receipt"),
+            "key_id":       RAZORPAY_KEY_ID,
+            "subtotal":     subtotal,
+            "discount":     discount,
+            "coupon_label": coupon_label,
         })
 
     def _handle_verify_payment(self, body):
@@ -255,6 +394,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"success": False, "error": "Missing required fields"}, status=400)
             return
 
+        # Look up the order WE created. If it isn't here, someone is replaying
+        # or fabricating an order_id — refuse before we even check the signature.
+        pending = pending_orders.get(order_id)
+        if not pending:
+            print(f"  [!] Verify called for unknown order {order_id}")
+            self._send_json({"success": False, "error": "Unknown order"}, status=400)
+            return
+
         message = f"{order_id}|{payment_id}".encode("utf-8")
         expected = hmac.new(
             RAZORPAY_KEY_SECRET.encode("utf-8"),
@@ -267,18 +414,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"success": False, "error": "Signature verification failed"}, status=400)
             return
 
-        # Record the verified payment alongside other orders.
+        # Record the verified payment using ONLY server-trusted amount + items.
         record = {
             "order_id":   f"KNH{len(orders)+1:04d}",
             "razorpay_order_id":   order_id,
             "razorpay_payment_id": payment_id,
             "customer":   data.get("customer", {}),
-            "amount":     data.get("amount"),
-            "items":      data.get("items", []),
+            "subtotal":   pending["subtotal"],
+            "discount":   pending["discount"],
+            "coupon":     pending["coupon"],
+            "amount":     pending["amount"],
+            "items":      pending["items"],
             "placed_at":  datetime.now().isoformat(),
             "status":     "paid",
         }
         orders.append(record)
+        # One-shot consumption — the same order_id can't be verified twice.
+        pending_orders.pop(order_id, None)
         print(f"\n  [+] Payment verified ✔  {record['order_id']}  ({payment_id})\n")
 
         self._send_json({
@@ -386,6 +538,7 @@ if __name__ == "__main__":
     print("  POST /api/wishlist       -> add to wishlist")
     print("  POST /api/razorpay/order -> create Razorpay order")
     print("  POST /api/razorpay/verify-> verify payment signature")
+    print("  POST /api/coupon/preview -> preview discount for cart + code")
     print("  GET  /api/razorpay/key   -> public KEY_ID for checkout.js")
     print()
     print("  Press Ctrl+C to stop\n")

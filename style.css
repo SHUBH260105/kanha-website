@@ -1850,6 +1850,42 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
 }
 
 .card-badge.limited { background: var(--accent-2); color: var(--white); }
+.card-badge.sold-out-badge { background: #444; color: #fff; }
+.card-badge.combo-badge { background: var(--accent); color: var(--black); padding: 5px 12px; font-size: 9.5px; }
+
+/* Sold-out card state */
+.product-card.sold-out .card-slideshow { filter: grayscale(0.85) brightness(0.75); }
+.product-card.sold-out:hover .card-slideshow { filter: grayscale(0.5) brightness(0.85); }
+.sold-out-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 10, 0.55);
+  z-index: 3;
+  pointer-events: none;
+}
+.sold-out-overlay span {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: 0.25em;
+  color: #fff;
+  text-transform: uppercase;
+  border: 2px solid #fff;
+  padding: 8px 22px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Sold-out ATC */
+.atc-btn.out-of-stock,
+.atc-btn:disabled {
+  background: #2a2a2a;
+  color: #777;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .card-dots {
   position: absolute;
@@ -2715,6 +2751,51 @@ button { cursor: pointer; border: none; background: none; font-family: inherit; 
   color: var(--white);
 }
 .summary-row.total strong { color: var(--accent); }
+.summary-row.discount-row { color: var(--accent); }
+.summary-row.discount-row strong { color: var(--accent); }
+
+/* Coupon input */
+.coupon-row {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+.coupon-row input {
+  flex: 1;
+  background: #111;
+  border: 1px solid var(--border);
+  color: var(--white);
+  padding: 10px 12px;
+  font-family: var(--font-body, inherit);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  outline: none;
+}
+.coupon-row input:focus { border-color: var(--accent); }
+.coupon-row button {
+  padding: 10px 18px;
+  background: var(--accent);
+  color: var(--black);
+  border: none;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.coupon-row button:hover { filter: brightness(1.1); }
+.coupon-row button:disabled { opacity: 0.5; cursor: wait; }
+.coupon-feedback {
+  font-size: 12px;
+  min-height: 16px;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+.coupon-feedback.ok    { color: var(--accent); }
+.coupon-feedback.error { color: #ff5b5b; }
 
 /* ─ Confirmation ─ */
 .confirm-shell {

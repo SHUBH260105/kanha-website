@@ -298,7 +298,7 @@ l113 -3 -3 28 c-3 27 -6 28 -61 31 l-59 3 51 54 c58 61 75 96 66 137 -10 44
 
       <div class="section-header">
         <h2 class="section-title">The Drop</h2>
-        <span class="drop-count">2 Styles</span>
+        <span class="drop-count">4 Styles</span>
       </div>
 
       <!-- ── PRODUCT CARDS GRID ── -->
@@ -320,7 +320,7 @@ l113 -3 -3 28 c-3 27 -6 28 -61 31 l-59 3 51 54 c58 61 75 96 66 137 -10 44
           </div>
         </div>
 
-        <div class="product-card" data-product-id="printed-joggers">
+        <div class="product-card sold-out" data-product-id="printed-joggers">
           <div class="card-slideshow">
             <img src="Printed_joggers_1/printed_joggers_6.png" class="card-slide active" alt="Gothic Cathedral Joggers" />
             <img src="Printed_joggers_1/printed_joggers_7.png" class="card-slide" alt="Gothic Cathedral Joggers" />
@@ -328,13 +328,46 @@ l113 -3 -3 28 c-3 27 -6 28 -61 31 l-59 3 51 54 c58 61 75 96 66 137 -10 44
             <img src="Printed_joggers_1/printed_joggers_8.png" class="card-slide" alt="Gothic Cathedral Joggers" />
             <img src="Printed_joggers_1/printed_joggers_4.jpeg" class="card-slide" alt="Gothic Cathedral Joggers" />
             <img src="Printed_joggers_1/printed_joggers_5.jpeg" class="card-slide" alt="Gothic Cathedral Joggers" />
-            <span class="card-badge limited">LIMITED</span>
+            <span class="card-badge sold-out-badge">SOLD OUT</span>
+            <div class="sold-out-overlay"><span>Sold Out</span></div>
             <div class="card-dots"></div>
           </div>
           <div class="card-info">
             <h3 class="card-name">Gothic Cathedral Joggers</h3>
             <p class="card-tag">Printed Black — Streetwear</p>
             <span class="card-price">&#8377;999</span>
+          </div>
+        </div>
+
+        <div class="product-card sold-out" data-product-id="thorn-tee">
+          <div class="card-slideshow">
+            <img src="printed jogger 2/tshirt design.png" class="card-slide active" alt="Thorn Tee" />
+            <img src="printed jogger 2/jogger design.png" class="card-slide" alt="Thorn Tee" />
+            <img src="printed jogger 2/design 1.png" class="card-slide" alt="Thorn Tee" />
+            <span class="card-badge sold-out-badge">SOLD OUT</span>
+            <div class="sold-out-overlay"><span>Sold Out</span></div>
+            <div class="card-dots"></div>
+          </div>
+          <div class="card-info">
+            <h3 class="card-name">Thorn Tee</h3>
+            <p class="card-tag">Acid-Wash Black — Drop 02</p>
+            <span class="card-price">&#8377;599</span>
+          </div>
+        </div>
+
+        <div class="product-card sold-out" data-product-id="thorn-combo">
+          <div class="card-slideshow">
+            <img src="printed jogger 2/design 1.png" class="card-slide active" alt="Thorn Drop Bundle" />
+            <img src="printed jogger 2/tshirt design.png" class="card-slide" alt="Thorn Drop Bundle" />
+            <img src="printed jogger 2/jogger design.png" class="card-slide" alt="Thorn Drop Bundle" />
+            <span class="card-badge combo-badge">COMBO · SAVE ₹199</span>
+            <div class="sold-out-overlay"><span>Sold Out</span></div>
+            <div class="card-dots"></div>
+          </div>
+          <div class="card-info">
+            <h3 class="card-name">Thorn Drop Bundle</h3>
+            <p class="card-tag">Tee + Joggers — Combo Offer</p>
+            <span class="card-price"><s>&#8377;1598</s> &#8377;1399</span>
           </div>
         </div>
 
@@ -675,8 +708,19 @@ l113 -3 -3 28 c-3 27 -6 28 -61 31 l-59 3 51 54 c58 61 75 96 66 137 -10 44
         <aside class="checkout-summary" id="checkoutSummary">
           <h3 class="checkout-section-title">Order Summary</h3>
           <div class="summary-items" id="summaryItems"></div>
+
+          <div class="coupon-row">
+            <input type="text" id="couponInput" placeholder="Coupon code" autocomplete="off" spellcheck="false" />
+            <button type="button" id="couponApplyBtn">Apply</button>
+          </div>
+          <div class="coupon-feedback" id="couponFeedback"></div>
+
           <div class="summary-totals">
             <div class="summary-row"><span>Subtotal</span><strong id="summarySubtotal">&#8377;0</strong></div>
+            <div class="summary-row discount-row" id="summaryDiscountRow" hidden>
+              <span id="summaryDiscountLabel">Discount</span>
+              <strong id="summaryDiscount">-&#8377;0</strong>
+            </div>
             <div class="summary-row"><span>Shipping</span><strong>FREE</strong></div>
             <div class="summary-row total"><span>Total</span><strong id="summaryTotal">&#8377;0</strong></div>
           </div>

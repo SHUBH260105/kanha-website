@@ -24,6 +24,7 @@ const PRODUCTS = {
     subtitle: 'Plain Black — Embroidered Logo',
     tag: 'Streetwear Essentials',
     price: 699,
+    inStock: true,
     stock: 'In Stock',
     badge: 'NEW',
     images: [
@@ -49,8 +50,9 @@ const PRODUCTS = {
     subtitle: 'Printed Black — Gothic Artwork',
     tag: 'Limited Edition Drop',
     price: 999,
-    stock: 'Limited Stock',
-    badge: 'LIMITED',
+    inStock: false,
+    stock: 'Out of Stock',
+    badge: 'SOLD OUT',
     images: [
       'Printed_joggers_1/printed_joggers_6.png',
       'Printed_joggers_1/printed_joggers_7.png',
@@ -69,6 +71,55 @@ const PRODUCTS = {
       'Limited run — once it\'s gone, it\'s gone',
     ],
     keywords: 'printed joggers gothic cathedral streetwear limited artwork',
+  },
+  'thorn-tee': {
+    id: 'thorn-tee',
+    name: 'Thorn Tee',
+    subtitle: 'Acid-Wash Black — Thorn Artwork',
+    tag: 'Drop 02 Tee',
+    price: 599,
+    inStock: false,
+    stock: 'Out of Stock',
+    badge: 'SOLD OUT',
+    images: [
+      'printed jogger 2/tshirt design.png',
+      'printed jogger 2/jogger design.png',
+      'printed jogger 2/design 1.png',
+    ],
+    desc: 'Heavy oversized tee with razor-sharp thorn artwork crawling up both sides. Acid-washed jet black so no two pieces fade exactly the same. The STITCH crest sits dead-center, small and clean. Pairs perfectly with the Thorn Joggers for the full Drop 02 look.',
+    features: [
+      'Heavyweight 240 GSM cotton',
+      'Acid-wash finish — every piece is one of one',
+      'Oversized boxy fit — unisex',
+      'Side-panel thorn print — sharp & high-contrast',
+      'Centered STITCH crest on chest',
+      'Reinforced double-stitched seams',
+    ],
+    keywords: 'thorn tee tshirt gothic black streetwear acid wash drop 02 oversized',
+  },
+  'thorn-combo': {
+    id: 'thorn-combo',
+    name: 'Thorn Drop Bundle',
+    subtitle: 'Thorn Tee + Cathedral Joggers — Combo Drop',
+    tag: 'Combo Offer · Save ₹199',
+    price: 1399, // Tee ₹599 + Joggers ₹999 = ₹1598 → bundle ₹1399
+    inStock: false,
+    stock: 'Out of Stock',
+    badge: 'COMBO',
+    images: [
+      'printed jogger 2/design 1.png',
+      'printed jogger 2/tshirt design.png',
+      'printed jogger 2/jogger design.png',
+    ],
+    desc: 'The full Drop 02 fit, bundled and discounted. One Thorn Tee and one pair of Gothic Cathedral Joggers — together for ₹1399 instead of ₹1598. Same heavy fabric, same sharp print language, head to toe. Limited combo allocation.',
+    features: [
+      'Includes 1× Thorn Tee + 1× Cathedral Joggers',
+      'Save ₹199 vs buying separately',
+      'Matched aesthetic — full Drop 02 look',
+      'Pick same or different sizes for tee & joggers at delivery',
+      'Strictly limited combo allocation',
+    ],
+    keywords: 'combo bundle thorn tee jogger gothic streetwear drop 02 set offer',
   },
 };
 
@@ -353,6 +404,9 @@ function openPDP(productId) {
   atcBtn.dataset.product = p.name;
   atcBtn.dataset.price   = p.price;
   atcBtn.dataset.image   = p.images[0];
+  atcBtn.disabled        = !p.inStock;
+  atcBtn.classList.toggle('out-of-stock', !p.inStock);
+  atcBtn.textContent     = p.inStock ? 'Add to Cart' : 'Sold Out';
 
   const wishBtn = document.getElementById('pdpWishBtn');
   wishBtn.dataset.id      = p.id;
@@ -445,6 +499,12 @@ document.getElementById('pdpSizes')?.addEventListener('click', e => {
 
 // PDP Add to Cart
 document.getElementById('pdpAtcBtn')?.addEventListener('click', function () {
+  const product = PRODUCTS[this.dataset.id];
+  if (!product?.inStock) {
+    showToast('This item is sold out', 'error');
+    return;
+  }
+
   const selected = document.querySelector('#pdpSizes .size-btn.selected');
   if (!selected) {
     const block = this.closest('.pdp-details').querySelector('.size-block');
@@ -720,6 +780,12 @@ const Checkout = (() => {
     const items = Cart.load();
     if (items.length === 0) return;
     closeAllDrawers();
+    // Reset any previously applied coupon so we never carry a stale discount.
+    appliedCoupon = null;
+    const couponInput = document.getElementById('couponInput');
+    const couponFeedback = document.getElementById('couponFeedback');
+    if (couponInput) couponInput.value = '';
+    if (couponFeedback) { couponFeedback.textContent = ''; couponFeedback.className = 'coupon-feedback'; }
     renderSummary(items);
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
@@ -732,8 +798,15 @@ const Checkout = (() => {
     document.body.style.overflow = '';
   }
 
+  // Coupon state — re-validated against the server, never trusted on the client.
+  let appliedCoupon = null;       // { code, discount, total, label }
+
+  function cartPayload() {
+    return Cart.load().map(i => ({ id: i.id, size: i.size, qty: i.qty }));
+  }
+
   function renderSummary(items) {
-    const total = Cart.subtotal();
+    const subtotal = Cart.subtotal();
     document.getElementById('summaryItems').innerHTML = items.map(i => `
       <div class="summary-item">
         <img src="${i.image}" alt="${i.name}" />
@@ -744,9 +817,73 @@ const Checkout = (() => {
         <div class="summary-item-price">₹${i.price * i.qty}</div>
       </div>
     `).join('');
-    document.getElementById('summarySubtotal').textContent = '₹' + total;
+    document.getElementById('summarySubtotal').textContent = '₹' + subtotal;
+
+    const discountRow   = document.getElementById('summaryDiscountRow');
+    const discountLabel = document.getElementById('summaryDiscountLabel');
+    const discountEl    = document.getElementById('summaryDiscount');
+    const total = appliedCoupon ? appliedCoupon.total : subtotal;
+
+    if (appliedCoupon) {
+      discountRow.hidden = false;
+      discountLabel.textContent = appliedCoupon.label || `Coupon ${appliedCoupon.code}`;
+      discountEl.textContent    = '-₹' + appliedCoupon.discount;
+    } else {
+      discountRow.hidden = true;
+    }
+
     document.getElementById('summaryTotal').textContent = '₹' + total;
-    document.getElementById('payBtnAmount').textContent = '· ₹' + total;
+    const payAmt = document.getElementById('payBtnAmount');
+    if (payAmt) payAmt.textContent = '· ₹' + total;
+  }
+
+  async function applyCoupon() {
+    const input    = document.getElementById('couponInput');
+    const btn      = document.getElementById('couponApplyBtn');
+    const feedback = document.getElementById('couponFeedback');
+    const code     = input.value.trim().toUpperCase();
+    feedback.className = 'coupon-feedback';
+    feedback.textContent = '';
+
+    if (!code) {
+      // empty input clears any applied coupon
+      appliedCoupon = null;
+      renderSummary(Cart.load());
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const res = await fetch('/api/coupon/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: cartPayload(), coupon: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        appliedCoupon = null;
+        feedback.classList.add('error');
+        feedback.textContent = data.error || 'Invalid coupon';
+      } else {
+        appliedCoupon = {
+          code,
+          discount: data.discount,
+          total:    data.total,
+          label:    data.coupon_label,
+        };
+        feedback.classList.add('ok');
+        feedback.textContent = `${data.coupon_label} applied — you saved ₹${data.discount}`;
+      }
+    } catch (err) {
+      appliedCoupon = null;
+      feedback.classList.add('error');
+      feedback.textContent = 'Could not apply coupon — try again';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Apply';
+      renderSummary(Cart.load());
+    }
   }
 
   function collectFormData() {
@@ -765,9 +902,10 @@ const Checkout = (() => {
   function resetPayBtn(btn) {
     btn.disabled = false;
     btn.textContent = 'Proceed to Pay ';
+    const total = appliedCoupon ? appliedCoupon.total : Cart.subtotal();
     const amt = document.createElement('span');
     amt.id = 'payBtnAmount';
-    amt.textContent = '· ₹' + Cart.subtotal();
+    amt.textContent = '· ₹' + total;
     btn.appendChild(amt);
   }
 
@@ -776,18 +914,25 @@ const Checkout = (() => {
       throw new Error('Razorpay SDK failed to load. Check your connection.');
     }
 
-    const amountPaise = Math.round(totalRupees * 100);
-    if (amountPaise < 100) throw new Error('Minimum amount is ₹1');
+    // Send only product references + (optional) coupon code — server alone
+    // decides prices and discounts.
+    const payload = items.map(i => ({ id: i.id, size: i.size, qty: i.qty }));
 
     const orderRes = await fetch('/api/razorpay/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: amountPaise, currency: 'INR' }),
+      body: JSON.stringify({
+        items:  payload,
+        coupon: appliedCoupon ? appliedCoupon.code : null,
+      }),
     });
     const orderData = await orderRes.json();
     if (!orderRes.ok || !orderData.success) {
       throw new Error(orderData.error || 'Could not create order');
     }
+
+    // Trust the server's amount, not our local total.
+    const amountPaise = orderData.amount;
 
     return new Promise((resolve, reject) => {
       const rzp = new Razorpay({
@@ -831,7 +976,13 @@ const Checkout = (() => {
             if (!verifyRes.ok || !verifyData.success) {
               throw new Error(verifyData.error || 'Verification failed');
             }
-            resolve({ orderId: verifyData.order_id });
+            resolve({
+              orderId: verifyData.order_id,
+              paidAmount: amountPaise / 100,
+              subtotal: orderData.subtotal,
+              discount: orderData.discount,
+              couponLabel: orderData.coupon_label,
+            });
           } catch (err) {
             reject(err);
           }
@@ -862,7 +1013,15 @@ const Checkout = (() => {
 
     try {
       const result = await payWithRazorpay({ customer, items, totalRupees: total, btn });
-      showConfirmation({ ...customer, orderId: result.orderId, total, items });
+      showConfirmation({
+        ...customer,
+        orderId:  result.orderId,
+        total:    result.paidAmount,
+        subtotal: result.subtotal,
+        discount: result.discount,
+        couponLabel: result.couponLabel,
+        items,
+      });
       Cart.clear();
       close();
       form.reset();
@@ -913,6 +1072,10 @@ const Checkout = (() => {
     openDrawer('cartDrawer');
   });
   form?.addEventListener('submit', handleSubmit);
+  document.getElementById('couponApplyBtn')?.addEventListener('click', applyCoupon);
+  document.getElementById('couponInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); }
+  });
   document.getElementById('confirmContinueBtn')?.addEventListener('click', closeConfirmation);
 
   return { open, close };
